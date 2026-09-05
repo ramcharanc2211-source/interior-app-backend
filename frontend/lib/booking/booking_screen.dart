@@ -16,6 +16,12 @@ class BookingScreen extends StatefulWidget {
 
 class _BookingScreenState extends State<BookingScreen> {
   // ============================================================
+  // API
+  // ============================================================
+
+  static const String baseUrl = 'http://127.0.0.1:5000';
+
+  // ============================================================
   // DATE
   // ============================================================
 
@@ -26,7 +32,7 @@ class _BookingScreenState extends State<BookingScreen> {
   // TIME
   // ============================================================
 
-  String selectedTime = "";
+  String selectedTime = '';
 
   List<String> bookedSlots = [];
 
@@ -38,17 +44,17 @@ class _BookingScreenState extends State<BookingScreen> {
   // ============================================================
 
   final List<String> timeSlots = [
-    "09:00 AM",
-    "10:00 AM",
-    "11:00 AM",
-    "12:00 PM",
-    "01:00 PM",
-    "02:00 PM",
-    "03:00 PM",
-    "04:00 PM",
-    "05:00 PM",
-    "06:00 PM",
-    "07:00 PM",
+    '09:00 AM',
+    '10:00 AM',
+    '11:00 AM',
+    '12:00 PM',
+    '01:00 PM',
+    '02:00 PM',
+    '03:00 PM',
+    '04:00 PM',
+    '05:00 PM',
+    '06:00 PM',
+    '07:00 PM',
   ];
 
   // ============================================================
@@ -58,7 +64,10 @@ class _BookingScreenState extends State<BookingScreen> {
   @override
   void initState() {
     super.initState();
-    fetchBookedSlots();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      fetchBookedSlots();
+    });
   }
 
   // ============================================================
@@ -66,9 +75,9 @@ class _BookingScreenState extends State<BookingScreen> {
   // ============================================================
 
   String formatDate(DateTime date) {
-    return "${date.year}-"
-        "${date.month.toString().padLeft(2, '0')}-"
-        "${date.day.toString().padLeft(2, '0')}";
+    return '${date.year}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
   }
 
   // ============================================================
@@ -97,7 +106,7 @@ class _BookingScreenState extends State<BookingScreen> {
       return name.toString();
     }
 
-    return "Interior Designer";
+    return 'Interior Designer';
   }
 
   // ============================================================
@@ -111,7 +120,7 @@ class _BookingScreenState extends State<BookingScreen> {
       return specialty.toString();
     }
 
-    return "Interior Design";
+    return 'Interior Design';
   }
 
   // ============================================================
@@ -127,23 +136,78 @@ class _BookingScreenState extends State<BookingScreen> {
     });
 
     try {
-      final formattedDate = formatDate(selectedDate);
+      // ----------------------------------------------------------
+      // GET SAVED JWT
+      // ----------------------------------------------------------
+
+      final prefs = await SharedPreferences.getInstance();
+
+      final token = prefs.getString('token');
+
+      if (token == null || token.isEmpty) {
+        debugPrint('JWT token not found');
+
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Please login again.')));
+        }
+
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // DESIGNER ID
+      // ----------------------------------------------------------
+
       final designerId = widget.designer['_id'];
 
-      final response = await http.get(
-        Uri.parse(
-          'http://127.0.0.1:5000/api/bookings/by-date'
-          '?date=$formattedDate'
-          '&designerId=$designerId',
-        ),
+      if (designerId == null || designerId.toString().isEmpty) {
+        debugPrint('Designer ID not found');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Designer information is missing.')),
+          );
+        }
+
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // DATE
+      // ----------------------------------------------------------
+
+      final formattedDate = formatDate(selectedDate);
+
+      // ----------------------------------------------------------
+      // REQUEST
+      // ----------------------------------------------------------
+
+      final uri = Uri.parse('$baseUrl/api/bookings/by-date').replace(
+        queryParameters: {
+          'date': formattedDate,
+          'designerId': designerId.toString(),
+        },
       );
+
+      final response = await http.get(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      debugPrint('Booked slots response: ${response.statusCode}');
+
+      // ----------------------------------------------------------
+      // SUCCESS
+      // ----------------------------------------------------------
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
         if (data is List) {
           final slots = data
-              .where((booking) => booking['time'] != null)
+              .where((booking) => booking is Map && booking['time'] != null)
               .map<String>((booking) => booking['time'].toString())
               .toList();
 
@@ -153,8 +217,31 @@ class _BookingScreenState extends State<BookingScreen> {
             });
           }
         }
-      } else {
-        debugPrint('Failed to fetch booked slots: ${response.statusCode}');
+      }
+      // ----------------------------------------------------------
+      // UNAUTHORIZED
+      // ----------------------------------------------------------
+      else if (response.statusCode == 401) {
+        debugPrint('JWT expired or invalid');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Your session expired. Please login again.'),
+            ),
+          );
+        }
+      }
+      // ----------------------------------------------------------
+      // OTHER ERROR
+      // ----------------------------------------------------------
+      else {
+        debugPrint(
+          'Failed to fetch booked slots: '
+          '${response.statusCode}',
+        );
+
+        debugPrint(response.body);
       }
     } catch (e) {
       debugPrint('Fetch booked slots error: $e');
@@ -261,7 +348,7 @@ class _BookingScreenState extends State<BookingScreen> {
     setState(() {
       focusedDay = newDate;
       selectedDate = newDate;
-      selectedTime = "";
+      selectedTime = '';
     });
 
     fetchBookedSlots();
@@ -272,7 +359,7 @@ class _BookingScreenState extends State<BookingScreen> {
   // ============================================================
 
   void changeMonth(int amount) {
-    DateTime newFocusedDay = DateTime(
+    final newFocusedDay = DateTime(
       focusedDay.year,
       focusedDay.month + amount,
       1,
@@ -284,18 +371,17 @@ class _BookingScreenState extends State<BookingScreen> {
       DateTime.now().day,
     );
 
-    if (newFocusedDay.year == firstAllowedDate.year &&
-        newFocusedDay.month == firstAllowedDate.month) {
-      if (newFocusedDay.isBefore(
-        DateTime(firstAllowedDate.year, firstAllowedDate.month, 1),
-      )) {
-        return;
-      }
+    final firstAllowedMonth = DateTime(
+      firstAllowedDate.year,
+      firstAllowedDate.month,
+      1,
+    );
+
+    if (newFocusedDay.isBefore(firstAllowedMonth)) {
+      return;
     }
 
-    if (newFocusedDay.isBefore(
-      DateTime(firstAllowedDate.year, firstAllowedDate.month, 1),
-    )) {
+    if (newFocusedDay.year > 2035) {
       return;
     }
 
@@ -309,12 +395,21 @@ class _BookingScreenState extends State<BookingScreen> {
   // ============================================================
 
   Future<void> bookNow() async {
+    // ----------------------------------------------------------
+    // TIME VALIDATION
+    // ----------------------------------------------------------
+
     if (selectedTime.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a time slot.')),
       );
+
       return;
     }
+
+    // ----------------------------------------------------------
+    // LOCAL BOOKED SLOT CHECK
+    // ----------------------------------------------------------
 
     if (bookedSlots.contains(selectedTime)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -329,34 +424,110 @@ class _BookingScreenState extends State<BookingScreen> {
     });
 
     try {
+      // --------------------------------------------------------
+      // GET JWT
+      // --------------------------------------------------------
+
       final prefs = await SharedPreferences.getInstance();
 
       final token = prefs.getString('token');
 
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:5000/api/bookings'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'designerId': widget.designer['_id'],
-          'date': formatDate(selectedDate),
-          'time': selectedTime,
-        }),
-      );
+      if (token == null || token.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Your session is missing. Please login again.'),
+            ),
+          );
+        }
+
+        return;
+      }
+
+      // --------------------------------------------------------
+      // DESIGNER ID
+      // --------------------------------------------------------
+
+      final designerId = widget.designer['_id'];
+
+      if (designerId == null || designerId.toString().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Designer information is missing.')),
+          );
+        }
+
+        return;
+      }
+
+      // --------------------------------------------------------
+      // CREATE BOOKING
+      // --------------------------------------------------------
+
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/bookings'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'designerId': designerId.toString(),
+              'date': formatDate(selectedDate),
+              'time': selectedTime,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      debugPrint('Booking response: ${response.statusCode}');
+
+      debugPrint('Booking body: ${response.body}');
 
       if (!mounted) return;
 
+      // --------------------------------------------------------
+      // SUCCESS
+      // --------------------------------------------------------
+
       if (response.statusCode == 201) {
         showBookingSuccess();
-      } else if (response.statusCode == 409) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This slot has already been booked.')),
-        );
+      }
+      // --------------------------------------------------------
+      // SLOT ALREADY BOOKED
+      //
+      // Backend currently returns 400.
+      // --------------------------------------------------------
+      else if (response.statusCode == 400) {
+        String message = 'This slot is already booked.';
 
-        fetchBookedSlots();
-      } else {
+        try {
+          final data = jsonDecode(response.body);
+
+          if (data is Map && data['message'] != null) {
+            message = data['message'].toString();
+          }
+        } catch (_) {}
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+
+        await fetchBookedSlots();
+      }
+      // --------------------------------------------------------
+      // UNAUTHORIZED
+      // --------------------------------------------------------
+      else if (response.statusCode == 401) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your session expired. Please login again.'),
+          ),
+        );
+      }
+      // --------------------------------------------------------
+      // OTHER ERROR
+      // --------------------------------------------------------
+      else {
         String message = 'Booking failed. Please try again.';
 
         try {
@@ -431,7 +602,8 @@ class _BookingScreenState extends State<BookingScreen> {
 
               Text(
                 'Your consultation with '
-                '${getDesignerName()} has been successfully booked.',
+                '${getDesignerName()} '
+                'has been successfully booked.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey.shade700, height: 1.5),
               ),
@@ -649,7 +821,7 @@ class _BookingScreenState extends State<BookingScreen> {
             const SizedBox(height: 28),
 
             // ======================================================
-            // SELECT DATE TITLE
+            // SELECT DATE
             // ======================================================
             const Text(
               'Select Date',
@@ -683,9 +855,6 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
               child: Column(
                 children: [
-                  // ==================================================
-                  // CUSTOM MONTH / YEAR HEADER
-                  // ==================================================
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -715,7 +884,9 @@ class _BookingScreenState extends State<BookingScreen> {
                                 color: Color(0xFF6A11CB),
                                 size: 20,
                               ),
+
                               const SizedBox(width: 7),
+
                               Text(
                                 focusedDay.year.toString(),
                                 style: const TextStyle(
@@ -724,7 +895,9 @@ class _BookingScreenState extends State<BookingScreen> {
                                   fontSize: 16,
                                 ),
                               ),
+
                               const SizedBox(width: 3),
+
                               const Icon(
                                 Icons.keyboard_arrow_down_rounded,
                                 color: Color(0xFF6A11CB),
@@ -743,9 +916,6 @@ class _BookingScreenState extends State<BookingScreen> {
                     ],
                   ),
 
-                  // ==================================================
-                  // CALENDAR
-                  // ==================================================
                   TableCalendar(
                     firstDay: DateTime.now(),
                     lastDay: DateTime.utc(2035, 12, 31),
@@ -798,7 +968,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       setState(() {
                         selectedDate = selectedDay;
                         focusedDay = newFocusedDay;
-                        selectedTime = "";
+                        selectedTime = '';
                       });
 
                       fetchBookedSlots();
@@ -860,7 +1030,9 @@ class _BookingScreenState extends State<BookingScreen> {
                           fontSize: 13,
                         ),
                       ),
+
                       const SizedBox(height: 3),
+
                       Text(
                         formatDate(selectedDate),
                         style: const TextStyle(
@@ -1071,7 +1243,7 @@ class _BookingScreenState extends State<BookingScreen> {
             const SizedBox(height: 30),
 
             // ======================================================
-            // CONFIRM BOOKING BUTTON
+            // CONFIRM BOOKING
             // ======================================================
             SizedBox(
               width: double.infinity,
@@ -1139,9 +1311,13 @@ class _BookingScreenState extends State<BookingScreen> {
     return Row(
       children: [
         Icon(icon, size: 20, color: const Color(0xFF6A11CB)),
+
         const SizedBox(width: 10),
+
         Text('$title:', style: TextStyle(color: Colors.grey.shade600)),
+
         const SizedBox(width: 6),
+
         Expanded(
           child: Text(
             value,

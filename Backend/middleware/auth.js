@@ -1,26 +1,41 @@
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
 
-const SECRET = "mysecretkey";
+const SECRET = process.env.JWT_SECRET;
 
-module.exports = function (req, res, next) {
-  const header = req.headers.authorization;
-
-  if (!header) {
-    return res.status(401).json({ message: "No token" });
-  }
-
-  // ✅ remove "Bearer "
-  const token = header.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ message: "Invalid token format" });
-  }
-
+const authMiddleware = (req, res, next) => {
   try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      return res.status(401).json({
+        message: "Authorization token required",
+      });
+    }
+
+    // Expected:
+    // Authorization: Bearer TOKEN
+
+    const parts = authHeader.split(" ");
+
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      return res.status(401).json({
+        message: "Invalid authorization format",
+      });
+    }
+
+    const token = parts[1];
+
     const decoded = jwt.verify(token, SECRET);
+
     req.user = decoded;
+
     next();
-  } catch (err) {
-    res.status(401).json({ message: "Invalid token" });
+
+  } catch (error) {
+    return res.status(401).json({
+      message: "Invalid or expired token",
+    });
   }
 };
+
+module.exports = authMiddleware;

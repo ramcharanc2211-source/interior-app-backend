@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const Designer = require('../models/Designer');
+const Designer = require('../models/designer');
 
 // ✅ CREATE DESIGNER
 router.post('/', async (req, res) => {

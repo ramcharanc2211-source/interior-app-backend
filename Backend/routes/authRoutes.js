@@ -1,56 +1,22 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
 
-const SECRET = "mysecretkey";
+const {
+  signup,
+  login,
+} = require("../controllers/authController");
 
+const authMiddleware = require("../middleware/auth");
 
-// REGISTER
-router.post('/register', async (req, res) => {
-  try {
-    const { email, password } = req.body;
+router.post("/register", signup);
 
-    const exists = await User.findOne({ email });
-    if (exists) {
-      return res.status(400).json({ message: "User already exists" });
-    }
+router.post("/login", login);
 
-    const user = new User({ email, password });
-    await user.save();
-
-    res.json({ message: "Registered successfully" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-// LOGIN (JWT)
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const user = await User.findOne({ email, password });
-
-    if (!user) {
-      return res.status(400).json({ message: "Invalid credentials" });
-    }
-
-    const token = jwt.sign(
-      { userId: user._id },
-      SECRET,
-      { expiresIn: '1d' }
-    );
-
-    res.json({
-      token: token,
-      user: user
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+router.get("/protected", authMiddleware, (req, res) => {
+  res.json({
+    message: "You have access to the protected route",
+    user: req.user,
+  });
 });
 
 module.exports = router;
